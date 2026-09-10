@@ -1,15 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 import mysql.connector
-import bcrypt
-
-def hash_password(password):
-    # Пароль должен быть в байтовом формате
-    password_bytes = password.encode('utf-8')
-    # Генерируем соль
-    salt = bcrypt.gensalt()
-    # Создаём хеш
-    hashed = bcrypt.hashpw(password_bytes, salt)
-    return hashed.decode()  # Возвращаем строку для хранения
+import hashlib
+import os
 
 app = Flask(__name__)  
 
@@ -25,8 +17,15 @@ def user_register():
     
     name = req['name']
     login = req['email']
-    password = hash_password(req['password'])
-    print(password)
+    password =req['password'].encode('utf-8')
+    key = hashlib.pbkdf2_hmac(
+        hash_name='sha256',
+        password=password,
+        salt=os.urandom(16),
+        iterations=600000,
+        dklen=32
+    )
+    password=key.hex()
     date = (name, login, password)
     cur = cnx.cursor()
     rows = cur.execute('INSERT INTO `users`(`username`, `email`, `password_hash`) VALUES (%s, %s, %s)', date)
