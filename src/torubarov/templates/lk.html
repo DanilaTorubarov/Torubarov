@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Личный кабинет</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .lk-card {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 460px;
+        }
+        .lk-card h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #333;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 16px;
+        }
+        .info-row:last-of-type { border-bottom: none; }
+        .info-label { color: #888; }
+        .info-value { color: #222; font-weight: bold; }
+        .balance { color: #28a745; font-size: 18px; }
+
+        .admin-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            font-size: 12px;
+            background: #ffc107;
+            color: #333;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .actions {
+            margin-top: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .btn {
+            display: block;
+            text-align: center;
+            padding: 12px;
+            border-radius: 5px;
+            color: #fff;
+            text-decoration: none;
+            font-size: 15px;
+            transition: background 0.3s;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .btn-ai      { background-color: #6f42c1; }
+        .btn-ai:hover      { background-color: #59339b; }
+        .btn-admin   { background-color: #ffc107; color: #333; }
+        .btn-admin:hover   { background-color: #e0a800; }
+        .btn-become  { background-color: #17a2b8; }
+        .btn-become:hover  { background-color: #117a8b; }
+        .btn-logout  { background-color: #dc3545; }
+        .btn-logout:hover  { background-color: #b02a37; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <div class="lk-card">
+        <h2>
+            Личный кабинет
+            {% if user.Is_admin %}
+                <span class="admin-badge">ADMIN</span>
+            {% endif %}
+        </h2>
+
+        <div class="info-row">
+            <span class="info-label">Имя:</span>
+            <span class="info-value">{{ user.username or '—' }}</span>
+        </div>
+
+        <div class="info-row">
+            <span class="info-label">Email:</span>
+            <span class="info-value">{{ user.email }}</span>
+        </div>
+
+        <div class="info-row">
+            <span class="info-label">Баланс:</span>
+            <span class="info-value balance">
+                {{ '%.2f'|format(user.balance) if user.balance is not none else '0.00' }} ₽
+            </span>
+        </div>
+
+        <div class="actions">
+            <a href="/chat" class="btn btn-ai">🤖 Написать нейросети</a>
+
+            {% if user.Is_admin %}
+                <a href="/admin" class="btn btn-admin">🛠 Администрирование</a>
+            {% else %}
+                <button type="button" class="btn btn-become" id="become-admin-btn">
+                    👑 Стать админом
+                </button>
+            {% endif %}
+
+            <a href="/logout" class="btn btn-logout">Выйти</a>
+        </div>
+    </div>
+
+<script>
+    const btn = document.getElementById('become-admin-btn');
+    if (btn) {
+        btn.addEventListener('click', async () => {
+            if (!confirm('Точно стать администратором?')) return;
+            btn.disabled = true;
+            btn.textContent = 'Обновляем...';
+            try {
+                const res = await fetch('/become_admin', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    alert('Готово! Обновите страницу.');
+                    location.reload();
+                } else {
+                    alert(data.message || 'Ошибка');
+                    btn.disabled = false;
+                    btn.textContent = '👑 Стать админом';
+                }
+            } catch (e) {
+                alert('Сеть недоступна: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = '👑 Стать админом';
+            }
+        });
+    }
+</script>
+</body>
+</html>

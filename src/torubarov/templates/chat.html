@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чат с нейросетью</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .chat-card {
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 640px;
+            display: flex;
+            flex-direction: column;
+            height: 80vh;
+        }
+        .chat-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #333;
+        }
+        .back-link {
+            color: #007bff;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover { text-decoration: underline; }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #fafafa;
+        }
+        .msg {
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 15px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+        .msg.user {
+            align-self: flex-end;
+            background: #007bff;
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+        .msg.ai {
+            align-self: flex-start;
+            background: #e9ecef;
+            color: #222;
+            border-bottom-left-radius: 4px;
+        }
+        .msg.error {
+            align-self: center;
+            background: #f8d7da;
+            color: #721c24;
+            font-size: 13px;
+        }
+
+        .chat-input {
+            display: flex;
+            padding: 12px;
+            border-top: 1px solid #eee;
+            gap: 8px;
+        }
+        .chat-input textarea {
+            flex: 1;
+            resize: none;
+            padding: 10px 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 15px;
+            height: 44px;
+            box-sizing: border-box;
+        }
+        .chat-input button {
+            padding: 0 20px;
+            background: #6f42c1;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            transition: background 0.3s;
+        }
+        .chat-input button:hover { background: #59339b; }
+        .chat-input button:disabled { background: #b3a5d6; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <div class="chat-card">
+        <div class="chat-header">
+            <h2>🤖 Нейросеть</h2>
+            <div>
+                <span id="balance-box" style="margin-right:15px;color:#28a745;font-weight:bold;">
+                    5.00 ₽ за запрос
+                </span>
+                <a href="/lk" class="back-link">← В личный кабинет</a>
+            </div>
+        </div>
+
+        <div class="messages" id="messages">
+            <div class="msg ai">Привет! Напиши свой вопрос, и я отвечу.</div>
+        </div>
+
+        <form class="chat-input" id="chat-form">
+            <textarea id="prompt" placeholder="Введите сообщение..." required></textarea>
+            <button type="submit" id="send-btn">Отправить</button>
+        </form>
+    </div>
+
+<script>
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('prompt');
+    const sendBtn = document.getElementById('send-btn');
+    const messages = document.getElementById('messages');
+
+    function addMessage(text, cls) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + cls;
+        div.textContent = text;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+        return div;
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+
+        addMessage(text, 'user');
+        input.value = '';
+        sendBtn.disabled = true;
+        const placeholder = addMessage('…печатает', 'ai');
+
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            });
+            const data = await res.json();
+            placeholder.remove();
+            if (res.ok && data.reply) {
+                addMessage(data.reply, 'ai');
+
+                // обновляем баланс
+                if (typeof data.new_balance === 'number') {
+                    const el = document.getElementById('balance-value');
+                    if (el) el.textContent = data.new_balance.toFixed(2);
+                }
+            } else {
+                addMessage(data.error || 'Ошибка сервера', 'error');
+            }
+        } catch (err) {
+            placeholder.remove();
+            addMessage('Сеть недоступна: ' + err.message, 'error');
+        } finally {
+            sendBtn.disabled = false;
+            input.focus();
+        }
+    });
+
+    // Enter — отправить, Shift+Enter — перенос строки
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            form.requestSubmit();
+        }
+    });
+</script>
+</body>
+</html>

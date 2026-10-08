@@ -1,1 +1,10 @@
 megagay123
+
+hf download bartowski/SmolLM2-360M-Instruct-GGUF \
+    --include "SmolLM2-360M-Instruct-Q4_K_M.gguf" \
+    --local-dir ~/models/smollm2
+
+curl -L -o ~/models/smollm2/SmolLM2-360M-Instruct-Q4_K_M.gguf \
+  "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
+
+uv add llama-cpp-python --pre --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu

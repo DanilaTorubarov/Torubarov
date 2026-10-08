@@ -20,4 +20,26 @@ $(document).ready(function(){
             })
         }
     })
+    $('#login-form').on('submit', function (e) {
+        e.preventDefault();
+        $.ajax({
+            url: '/user_login',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                email: $('#login-email').val(),
+                password: $('#login-password').val()
+            })
+        })
+        .done(function (res) {
+            if (res.status === 'ok') {
+                window.location.href = res.redirect; // → /lk
+            }
+        })
+        .fail(function (xhr) {
+            let msg = 'Ошибка входа';
+            try { msg = JSON.parse(xhr.responseText).message; } catch (e) {}
+            alert(msg);
+        });
+    });
 })
