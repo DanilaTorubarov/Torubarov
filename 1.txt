@@ -7,4 +7,4 @@ hf download bartowski/SmolLM2-360M-Instruct-GGUF \
 curl -L -o ~/models/smollm2/SmolLM2-360M-Instruct-Q4_K_M.gguf \
   "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
 
-uv add llama-cpp-python --pre --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+uv add git+https://github.com/JamePeng/llama-cpp-python.git

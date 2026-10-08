@@ -33,17 +33,15 @@
             justify-content: space-between;
             align-items: center;
         }
-        .chat-header h2 {
-            margin: 0;
-            font-size: 18px;
-            color: #333;
-        }
-        .back-link {
-            color: #007bff;
-            text-decoration: none;
-            font-size: 14px;
-        }
+        .chat-header h2 { margin: 0; font-size: 18px; color: #333; }
+        .back-link { color: #007bff; text-decoration: none; font-size: 14px; }
         .back-link:hover { text-decoration: underline; }
+        .balance-box {
+            margin-right: 15px;
+            color: #28a745;
+            font-weight: bold;
+            font-size: 13px;
+        }
 
         .messages {
             flex: 1;
@@ -81,12 +79,20 @@
             color: #721c24;
             font-size: 13px;
         }
+        .msg img {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 5px;
+            display: block;
+        }
 
         .chat-input {
             display: flex;
             padding: 12px;
             border-top: 1px solid #eee;
             gap: 8px;
+            align-items: center;
         }
         .chat-input textarea {
             flex: 1;
@@ -101,6 +107,7 @@
         }
         .chat-input button {
             padding: 0 20px;
+            height: 44px;
             background: #6f42c1;
             color: #fff;
             border: none;
@@ -111,6 +118,14 @@
         }
         .chat-input button:hover { background: #59339b; }
         .chat-input button:disabled { background: #b3a5d6; cursor: not-allowed; }
+
+        .photo-btn {
+            background: #17a2b8 !important;
+            padding: 0 14px !important;
+            font-size: 18px !important;
+        }
+        .photo-btn:hover { background: #117a8b !important; }
+        #photo-input { display: none; }
     </style>
 </head>
 <body>
@@ -118,19 +133,23 @@
     <div class="chat-card">
         <div class="chat-header">
             <h2>🤖 Нейросеть</h2>
-            <div>
-                <span id="balance-box" style="margin-right:15px;color:#28a745;font-weight:bold;">
-                    5.00 ₽ за запрос
+            <div style="display:flex;align-items:center;">
+                <span class="balance-box">
+                    Баланс: <span id="balance-value">
+                        {{ '%.2f'|format(user.balance) if user.balance is not none else '0.00' }}
+                    </span> ₽ · 5 ₽ / запрос
                 </span>
-                <a href="/lk" class="back-link">← В личный кабинет</a>
+                <a href="/lk" class="back-link">← В ЛК</a>
             </div>
         </div>
 
         <div class="messages" id="messages">
-            <div class="msg ai">Привет! Напиши свой вопрос, и я отвечу.</div>
+            <div class="msg ai">Привет! Напиши вопрос или пришли фото, и я отвечу.</div>
         </div>
 
         <form class="chat-input" id="chat-form">
+            <button type="button" class="photo-btn" id="photo-btn" title="Загрузить фото">📷</button>
+            <input type="file" id="photo-input" accept="image/*">
             <textarea id="prompt" placeholder="Введите сообщение..." required></textarea>
             <button type="submit" id="send-btn">Отправить</button>
         </form>
@@ -141,16 +160,47 @@
     const input = document.getElementById('prompt');
     const sendBtn = document.getElementById('send-btn');
     const messages = document.getElementById('messages');
+    const photoBtn = document.getElementById('photo-btn');
+    const photoInput = document.getElementById('photo-input');
 
-    function addMessage(text, cls) {
+    function addMessage(text, cls, imageUrl) {
         const div = document.createElement('div');
         div.className = 'msg ' + cls;
-        div.textContent = text;
+        if (text) div.textContent = text;
+        if (imageUrl) {
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            div.appendChild(img);
+        }
         messages.appendChild(div);
         messages.scrollTop = messages.scrollHeight;
         return div;
     }
 
+    function updateBalance(newBalance) {
+        const el = document.getElementById('balance-value');
+        if (el && typeof newBalance === 'number') {
+            el.textContent = newBalance.toFixed(2);
+        }
+    }
+
+    async function sendJson(url, body) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+            const t = await res.text();
+            console.error('Non-JSON:', res.status, t.slice(0, 300));
+            return { ok: false, status: res.status, data: { error: 'Ошибка сервера (' + res.status + ')' } };
+        }
+        const data = await res.json();
+        return { ok: res.ok, status: res.status, data };
+    }
+
+    // --- Отправка текста ---
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const text = input.value.trim();
@@ -161,32 +211,60 @@
         sendBtn.disabled = true;
         const placeholder = addMessage('…печатает', 'ai');
 
-        try {
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
-            });
-            const data = await res.json();
-            placeholder.remove();
-            if (res.ok && data.reply) {
-                addMessage(data.reply, 'ai');
+        const { ok, data } = await sendJson('/api/chat', { message: text });
+        placeholder.remove();
 
-                // обновляем баланс
-                if (typeof data.new_balance === 'number') {
-                    const el = document.getElementById('balance-value');
-                    if (el) el.textContent = data.new_balance.toFixed(2);
-                }
-            } else {
-                addMessage(data.error || 'Ошибка сервера', 'error');
-            }
-        } catch (err) {
-            placeholder.remove();
-            addMessage('Сеть недоступна: ' + err.message, 'error');
-        } finally {
-            sendBtn.disabled = false;
-            input.focus();
+        if (ok && data.reply) {
+            addMessage(data.reply, 'ai');
+            updateBalance(data.new_balance);
+        } else {
+            addMessage(data.error || 'Ошибка', 'error');
         }
+        sendBtn.disabled = false;
+        input.focus();
+    });
+
+    // --- Отправка фото ---
+    photoBtn.addEventListener('click', () => photoInput.click());
+
+    photoInput.addEventListener('change', async () => {
+        const file = photoInput.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async () => {
+            const dataUrl = reader.result;   // "data:image/jpeg;base64,..."
+
+            addMessage('', 'user', dataUrl);
+            const placeholder = addMessage('…смотрю на картинку', 'ai');
+
+            sendBtn.disabled = true;
+            photoBtn.disabled = true;
+
+            try {
+                const { ok, data } = await sendJson('/api/describe_image', {
+                    image: dataUrl,
+                    prompt: input.value.trim() || 'Опиши, что ты видишь на этой картинке.'
+                });
+
+                placeholder.remove();
+                if (ok && data.reply) {
+                    addMessage(data.reply, 'ai');
+                    updateBalance(data.new_balance);
+                    input.value = '';
+                } else {
+                    addMessage(data.error || 'Ошибка', 'error');
+                }
+            } catch (err) {
+                placeholder.remove();
+                addMessage('Сеть недоступна: ' + err.message, 'error');
+            } finally {
+                sendBtn.disabled = false;
+                photoBtn.disabled = false;
+                photoInput.value = '';   // сброс, чтобы можно было выбрать тот же файл снова
+            }
+        };
+        reader.readAsDataURL(file);
     });
 
     // Enter — отправить, Shift+Enter — перенос строки

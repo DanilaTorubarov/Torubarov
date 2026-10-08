@@ -6,10 +6,11 @@ from llama_cpp import Llama
 # Загружаем модель один раз при старте приложения
 # Путь укажите свой, куда скачали GGUF
 llm = Llama(
-    model_path="/home/guest/models/smollm2/SmolLM2-360M-Instruct-Q4_K_M.gguf",
-    n_ctx=4096,       # размер контекста
-    n_threads=4,      # количество потоков CPU
-    verbose=False
+    model_path="/home/guest/models/lfm-vl/LFM2.5-VL-450M-Q4_K_M.gguf",  # Языковая модель
+    mmproj_path="/home/guest/models/lfm-vl/mmproj-LFM2.5-VL-450m-F16.gguf", # Визуальный проектор
+    n_ctx=4096,       # Рекомендуется увеличить, чтобы вместить эмбеддинги изображения
+    n_threads=4,      # Количество потоков CPU
+    verbose=True      # Можно включить при первом запуске для просмотра информации о загрузке
 )
 app = Flask(__name__)
 app.secret_key = "adaAUIYtf76g218ro;1ihy89a"
@@ -23,7 +24,29 @@ DB_CONFIG = {
 }
 
 SALT = b"KamalinSigma"
+def log_chat(user_id, request_type, user_message, ai_reply, cost):
+    """Пишет запрос в историю чатов."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO chat_history (user_id, request_type, user_message, ai_reply, cost) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (user_id, request_type, user_message, ai_reply, cost)
+    )
+    db.commit()
+    cur.close()
 
+def log_balance(user_id, amount, reason):
+    """Пишет изменение баланса в историю."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO balance_history (user_id, amount, reason) "
+        "VALUES (%s, %s, %s)",
+        (user_id, amount, reason)
+    )
+    db.commit()
+    cur.close()
 def current_user():
     """Возвращает dict с данными текущего юзера или None."""
     if "user_id" not in session:
@@ -256,9 +279,10 @@ def admin_action():
 
 @app.route("/chat")
 def chat():
-    if "user_id" not in session:
+    user = current_user()
+    if user is None:
         return redirect(url_for("login"))
-    return render_template("chat.html")
+    return render_template("chat.html", user=user)
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -334,6 +358,91 @@ def api_chat():
         )
         db.commit()
         cur.close()
+        return jsonify({"error": f"Ошибка нейросети: {e}"}), 500
+
+@app.route("/api/describe_image", methods=["POST"])
+def api_describe_image():
+    if "user_id" not in session:
+        return jsonify({"error": "Не авторизован"}), 401
+
+    req = request.get_json(silent=True) or {}
+    image_data = req.get("image") or ""
+    prompt = (req.get("prompt") or "Опиши, что ты видишь на этой картинке.").strip()
+
+    if not image_data.startswith("data:image/"):
+        return jsonify({"error": "Некорректное изображение"}), 400
+
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+
+    # Проверка баланса
+    cur.execute("SELECT balance FROM users WHERE id = %s", (session["user_id"],))
+    row = cur.fetchone()
+    if row is None:
+        cur.close()
+        session.clear()
+        return jsonify({"error": "Пользователь не найден"}), 401
+
+    balance = float(row["balance"] or 0)
+    if balance < COST_PER_REQUEST:
+        cur.close()
+        return jsonify({
+            "error": f"Недостаточно средств. Баланс: {balance:.2f} ₽, "
+                     f"нужно: {COST_PER_REQUEST:.2f} ₽"
+        }), 402
+
+    # Списание
+    cur.execute(
+        "UPDATE users SET balance = balance - %s WHERE id = %s",
+        (COST_PER_REQUEST, session["user_id"])
+    )
+    db.commit()
+    cur.close()
+
+    # Запрос к vision-модели
+    try:
+        response = vision_llm.create_chat_completion(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": image_data}
+                        }
+                    ]
+                }
+            ],
+            max_tokens=512,
+            temperature=0.7
+        )
+        reply = response["choices"][0]["message"]["content"].strip()
+        if not reply:
+            raise RuntimeError("Пустой ответ модели")
+
+        log_chat(session["user_id"], "text", message, reply, COST_PER_REQUEST)
+        log_balance(session["user_id"], -COST_PER_REQUEST, "Запрос к нейросети (текст)")
+
+        return jsonify({
+            "reply": reply,
+            "new_balance": balance - COST_PER_REQUEST
+        })
+
+    except Exception as e:
+        # возвращаем деньги при ошибке
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            "UPDATE users SET balance = balance + %s WHERE id = %s",
+            (COST_PER_REQUEST, session["user_id"])
+        )
+        db.commit()
+        cur.close()
+
+        import traceback
+        traceback.print_exc()
+        log_balance(session["user_id"], COST_PER_REQUEST, "Возврат: ошибка нейросети (текст)")
         return jsonify({"error": f"Ошибка нейросети: {e}"}), 500
 
 if __name__ == "__main__":
